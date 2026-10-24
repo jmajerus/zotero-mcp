@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **CSL JSON imports keep directors, composers and other creator roles, and no longer fail on a role the item type lacks.** Only `author`, `editor` and `translator` were read, so a film's `director` was dropped, and a film whose CSL named an `author` (not a film creator type) was rejected by Zotero. `director`, `composer`, `interviewer`, `recipient`, `container-author` (Book Author), `collection-editor` (Series Editor) and `reviewed-author` now import too. Each role is checked against the item type's creator types: `author` becomes the type's primary creator (a film's director), as in Zotero's own CSL mapping, and any other role the type does not accept becomes Contributor. If the creator types cannot be read, the three original roles pass through as before and the rest import as Contributor.
+
 ## [0.15.1] - 2026-10-16
 
 ### Added
