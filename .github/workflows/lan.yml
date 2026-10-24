@@ -1,0 +1,68 @@
+# Builds and tests the lan branch that the LAN Zotero MCP server runs: the
+# upstream release in lan/lan.json plus this fork's pending fix branches.
+# lan only moves after its tests pass, and each tested commit gets a
+# lan/tests status, which the deploy tool requires before installing it.
+name: LAN build
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly, so a new upstream release or a conflict shows up unprompted.
+    - cron: "0 7 * * 1"
+
+permissions:
+  contents: write
+  statuses: write
+
+concurrency:
+  group: lan
+  cancel-in-progress: false
+
+jobs:
+  lan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild lan
+        id: rebuild
+        run: |
+          cp -r lan "$RUNNER_TEMP/lan-tooling"
+          git config user.name "lan-ci"
+          git config user.email "lan-ci@users.noreply.github.com"
+          bash "$RUNNER_TEMP/lan-tooling/rebuild-lan.sh" "$RUNNER_TEMP/lan-tooling/lan.json"
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      # Upstream's own test install (release.yml), on the server's Python.
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pytest-timeout "fastmcp<4" pyzotero python-dotenv "pdf-inspector==0.2.6" markdownify chromadb unidecode bibtexparser tiktoken pymupdf
+          python -m pip install -e . --no-deps
+
+      - name: Run tests
+        run: pytest -q --ignore=tests/test_lifespan.py
+
+      - name: Push lan
+        if: steps.rebuild.outputs.unchanged == 'false'
+        run: git push --force origin lan
+
+      - name: Mark lan tested
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/statuses/${{ steps.rebuild.outputs.sha }}" \
+            -f state=success -f context=lan/tests \
+            -f description="Tests passed in LAN build ${{ github.run_number }}" \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          {
+            echo "lan @ \`${{ steps.rebuild.outputs.sha }}\`"
+            [ "${{ steps.rebuild.outputs.unchanged }}" = true ] && echo "(unchanged; not pushed)"
+            echo
+            git log --oneline --first-parent "${{ steps.rebuild.outputs.sha }}" -n 10
+          } >> "$GITHUB_STEP_SUMMARY"

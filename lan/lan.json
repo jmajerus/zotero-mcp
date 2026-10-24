@@ -1,0 +1,8 @@
+{
+  "upstream": "https://github.com/54yyyu/zotero-mcp.git",
+  "base": "v0.15.1",
+  "branches": [
+    { "name": "fix/citekey-web-mode-scan", "note": "upstream PR #740" },
+    { "name": "fix/csl-creator-roles", "note": "PR held until #740 is acknowledged" }
+  ]
+}
