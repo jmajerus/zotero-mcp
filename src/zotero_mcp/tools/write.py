@@ -5792,10 +5792,15 @@ def add_by_csl_json(
         # call instead of one create_items() POST per entry.
         results: list[dict] = []
         pending: list[tuple[int, dict]] = []
+        creator_types = functools.cache(
+            functools.partial(_helpers.item_creator_types_for, write_zot)
+        )
         for entry in entries:
             try:
                 item_data = _citation_import.csl_json_to_zotero(
-                    entry, functools.partial(_helpers.item_template_for, write_zot)
+                    entry,
+                    functools.partial(_helpers.item_template_for, write_zot),
+                    creator_types,
                 )
             except Exception as e:
                 results.append({

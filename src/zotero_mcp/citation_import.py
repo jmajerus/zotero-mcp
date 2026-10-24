@@ -6,7 +6,7 @@ https://aurimasv.github.io/z2csl/typeMap.xml
 Entry point functions:
 - ``parse_bibtex(text)`` -> list of parsed entry dicts
 - ``bibtex_entry_to_zotero(entry, template_fn)`` -> Zotero item dict
-- ``csl_json_to_zotero(csl, template_fn)`` -> Zotero item dict
+- ``csl_json_to_zotero(csl, template_fn, creator_types_fn=None)`` -> Zotero item dict
 
 The converters never mutate ``template_fn``'s output; they return a fresh dict
 populated only with fields valid for the resolved Zotero item type. Unmapped
@@ -598,11 +598,52 @@ def _csl_text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
+# CSL name variables and the Zotero creator types they import as, after
+# Zotero's own CSL mapping. ``author`` is special: it stands for the item
+# type's primary creator, so a film's author is its director.
+CSL_CREATOR_ROLES: tuple[tuple[str, str], ...] = (
+    ("author", "author"),
+    ("editor", "editor"),
+    ("translator", "translator"),
+    ("director", "director"),
+    ("composer", "composer"),
+    ("interviewer", "interviewer"),
+    ("recipient", "recipient"),
+    ("container-author", "bookAuthor"),
+    ("collection-editor", "seriesEditor"),
+    ("reviewed-author", "reviewedAuthor"),
+)
+
+#: The roles sent before creator types were checked. Without a creator-type
+#: lookup they still pass through unchanged, and any other role imports as
+#: ``contributor``, which every Zotero item type accepts.
+_UNCHECKED_ROLES = frozenset({"author", "editor", "translator"})
+
+
+def _creator_role(role: str, creator_types: list[dict] | None) -> str:
+    if creator_types is None:
+        return role if role in _UNCHECKED_ROLES else "contributor"
+    valid = {t["creatorType"] for t in creator_types}
+    if role in valid:
+        return role
+    if role == "author" and creator_types:
+        # The API lists the primary creator type first (film: director).
+        primary = next((t for t in creator_types if t.get("primary")), creator_types[0])
+        return primary["creatorType"]
+    return "contributor"
+
+
 def csl_json_to_zotero(
     csl: dict,
     template_fn: Callable[[str], dict],
+    creator_types_fn: Callable[[str], list[dict] | None] | None = None,
 ) -> dict:
-    """Convert one CSL JSON object into a Zotero item dict."""
+    """Convert one CSL JSON object into a Zotero item dict.
+
+    ``creator_types_fn(zot_type)`` returns the creator types the item type
+    accepts (pyzotero's ``item_creator_types``); with it, each CSL name role
+    is checked so Zotero never rejects the item for an invalid creator.
+    """
     csl_type = (csl.get("type") or "").lower()
     zot_type = CSL_TYPE_MAP.get(csl_type, "document")
     template = dict(template_fn(zot_type))
@@ -612,10 +653,12 @@ def csl_json_to_zotero(
     _set_if_in_template(template, "shortTitle", _csl_text(csl.get("title-short")))
 
     # Creators
+    creator_types = creator_types_fn(zot_type) if creator_types_fn else None
     creators = []
-    creators += _csl_names_to_creators(csl.get("author"), "author")
-    creators += _csl_names_to_creators(csl.get("editor"), "editor")
-    creators += _csl_names_to_creators(csl.get("translator"), "translator")
+    for csl_role, zotero_role in CSL_CREATOR_ROLES:
+        creators += _csl_names_to_creators(
+            csl.get(csl_role), _creator_role(zotero_role, creator_types)
+        )
     if creators and "creators" in template:
         template["creators"] = creators
 

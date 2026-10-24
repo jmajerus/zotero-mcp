@@ -340,6 +340,21 @@ def item_template_for(zot, item_type: str, link_mode: str | None = None) -> dict
         return _local_item_template(zot, item_type, link_mode)
 
 
+def item_creator_types_for(zot, item_type: str) -> list[dict] | None:
+    """The creator types *item_type* accepts, primary first, or None.
+
+    Zotero rejects a creator whose type the item type does not allow (a
+    ``director`` on a book), so importers check against this. None means the
+    backend could not say; callers then keep only the roles every importer
+    already sent.
+    """
+    try:
+        types = zot.item_creator_types(item_type)
+    except Exception:
+        return None
+    return [dict(t) for t in types or [] if isinstance(t, dict) and t.get("creatorType")] or None
+
+
 # Uploads take their contentType from mimetypes, in attach_files and inside
 # pyzotero, and its answer for these depends on the Python version and the
 # platform's MIME database (application/octet-stream, application/yaml, ...).
